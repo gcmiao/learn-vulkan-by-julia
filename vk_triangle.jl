@@ -6,6 +6,7 @@ instance = Ref{vk.VkInstance}(C_NULL)
 physicalDevice = vk.VK_NULL_HANDLE
 logicalDevice = Ref{vk.VkDevice}()
 
+#################### 1.Create instance ####################
 function getAppInfo()
     appInfo = Ref(vk.VkApplicationInfo(
         vk.VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -50,6 +51,8 @@ function createInstance()
     return vk.vkCreateInstance(createInfo, C_NULL, instance)
 end
 
+#################### 2.Using validation layers ####################
+#################### 3.Pick Physical device ####################
 function isDeviceSuitable(device)
     deviceProperties = Ref{vk.VkPhysicalDeviceProperties}();
     deviceFeatures = Ref{vk.VkPhysicalDeviceFeatures}();
@@ -89,6 +92,7 @@ function pickPhysicalDevice()
     end
 end
 
+#################### 4.Queue families ####################
 function findQueueFamilies(device)
     queueFamilyCount = Ref{Cuint}(0)
     vk.vkGetPhysicalDeviceQueueFamilyProperties(device, queueFamilyCount, C_NULL);
@@ -108,6 +112,7 @@ function findQueueFamilies(device)
     indices
 end
 
+#################### 5.Create logical device ####################
 function createLogicalDevice()
     indices = findQueueFamilies(physicalDevice)
     queuePriority = Ref{Float32}(1.0)
@@ -151,6 +156,21 @@ function createLogicalDevice()
     end
 end
 
+
+
+
+
+function vkDestoryInstanceCallback()
+    println("callback")
+end
+
+
+
+function render()
+    #println("in render")
+end
+
+#################### 0.Setup ####################
 function initVulkan()
     if (createInstance() != vk.VK_SUCCESS)
         println("failed to create instance!")
@@ -179,19 +199,11 @@ function mainLoop()
     end
 end
 
-function vkDestoryInstanceCallback()
-    println("callback")
-end
-
 function cleanup()
     vk.vkDestroyDevice(logicalDevice[], C_NULL)
     vk.vkDestroyInstance(instance[], C_NULL)
     GLFW.DestroyWindow(window)
     GLFW.Terminate()
-end
-
-function render()
-    #println("in render")
 end
 
 initVulkan()

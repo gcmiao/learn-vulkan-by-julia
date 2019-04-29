@@ -3,6 +3,8 @@ using GLFW
 
 window = GLFW.Window(Ptr{Cvoid}(C_NULL))
 instance = Ref{vk.VkInstance}(C_NULL)
+physicalDevice = vk.VK_NULL_HANDLE
+logicalDevice = Ref{vk.VkDevice}()
 
 function getAppInfo()
     appInfo = Ref(vk.VkApplicationInfo(
@@ -20,7 +22,7 @@ function getRequiredInstanceExtensions()
     glfwExtensions = GLFW.GetRequiredInstanceExtensions();
     extensionCount = length(glfwExtensions)
     CextNames = Vector{Cstring}(undef, 0)
-    for i = 1:extensionCount
+    for i = 1 : extensionCount
         push!(CextNames, pointer(glfwExtensions[i]))
     end
     CextNames, extensionCount
@@ -49,7 +51,21 @@ function createInstance()
 end
 
 function isDeviceSuitable(device)
-    return true
+    deviceProperties = Ref{vk.VkPhysicalDeviceProperties}();
+    deviceFeatures = Ref{vk.VkPhysicalDeviceFeatures}();
+    vk.vkGetPhysicalDeviceProperties(device, deviceProperties);
+    vk.vkGetPhysicalDeviceFeatures(device, deviceFeatures);
+    if (deviceFeatures[].geometryShader
+        #&&deviceProperties[].deviceType == vk.VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU
+        ) == false
+        return false
+    end
+
+    indices = findQueueFamilies(device)
+    if indices == -1
+        return false
+    end
+    true
 end
 
 function pickPhysicalDevice()
@@ -62,20 +78,77 @@ function pickPhysicalDevice()
     devices = Array{vk.VkPhysicalDevice}(undef, deviceCount[])
     vk.vkEnumeratePhysicalDevices(instance[], deviceCount, devices)
 
-    physicalDevice = vk.VK_NULL_HANDLE
     for device in devices
         if (isDeviceSuitable(device))
-            physicalDevice = device
+            global physicalDevice = device
             break;
         end
     end
     if (physicalDevice == vk.VK_NULL_HANDLE)
-        println("filed to find a suitable GPU!")
+        println("failed to find a suitable GPU!")
     end
 end
 
-function createLogicalDevice()
+function findQueueFamilies(device)
+    queueFamilyCount = Ref{Cuint}(0)
+    vk.vkGetPhysicalDeviceQueueFamilyProperties(device, queueFamilyCount, C_NULL);
     
+    queueFamilies = Array{vk.VkQueueFamilyProperties}(undef, queueFamilyCount[])
+    vk.vkGetPhysicalDeviceQueueFamilyProperties(device, queueFamilyCount, queueFamilies);
+    
+    indices = -1;
+    i = 0; #queueFamilyIndex should start from 0
+    for queueFamily in queueFamilies
+        if (queueFamily.queueCount > 0 && (queueFamily.queueFlags & vk.VK_QUEUE_GRAPHICS_BIT == true))
+            indices = i
+            break
+        end
+        i += 1
+    end
+    indices
+end
+
+function createLogicalDevice()
+    indices = findQueueFamilies(physicalDevice)
+    queuePriority = Ref{Float32}(1.0)
+    queueCreateInfo = Ref(vk.VkDeviceQueueCreateInfo(
+        vk.VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+        C_NULL,
+        0, #flag
+        indices, #queueFamilyIndex
+        1, #queueCount
+        Base.unsafe_convert(Ptr{Float32}, queuePriority)
+    ))
+
+    cc = Array{Int32}(undef, 1) # magical code
+    cc[1] = 1 # magical code
+
+    deviceFeatures = Ref{vk.VkPhysicalDeviceFeatures}();
+    vk.vkGetPhysicalDeviceFeatures(physicalDevice, deviceFeatures);
+
+    flags = vk.VK_DEBUG_REPORT_ERROR_BIT_EXT |
+    vk.VK_DEBUG_REPORT_WARNING_BIT_EXT |
+    vk.VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT
+    createInfo = Ref(vk.VkDeviceCreateInfo(
+        vk.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        C_NULL,
+        #0, #flags
+        flags,
+        1, #createInfoCount
+        Base.unsafe_convert(Ptr{vk.VkDeviceQueueCreateInfo}, queueCreateInfo),
+        0, #enabledLayerCount, VilidationLayers is disabled
+        C_NULL, #ppEnabledlayerNames
+        0, #enabledExtensionCount
+        C_NULL, #ppEnabledExtensionNames
+        Base.unsafe_convert(Ptr{vk.VkPhysicalDeviceFeatures}, deviceFeatures)
+    ))
+    println("ready")
+    
+    err = vk.vkCreateDevice(physicalDevice, createInfo, C_NULL, logicalDevice)
+    if err != vk.VK_SUCCESS
+        println(err)
+        println("failed to create logical device!")
+    end
 end
 
 function initVulkan()
@@ -111,6 +184,7 @@ function vkDestoryInstanceCallback()
 end
 
 function cleanup()
+    vk.vkDestroyDevice(logicalDevice[], C_NULL)
     vk.vkDestroyInstance(instance[], C_NULL)
     GLFW.DestroyWindow(window)
     GLFW.Terminate()
@@ -120,7 +194,6 @@ function render()
     #println("in render")
 end
 
-#app = TriangleApp()
 initVulkan()
 initWindow()
 mainLoop()

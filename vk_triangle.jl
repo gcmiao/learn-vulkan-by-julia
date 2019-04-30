@@ -1,10 +1,14 @@
 using VulkanCore
 using GLFW
 
-window = GLFW.Window(Ptr{Cvoid}(C_NULL))
-instance = Ref{vk.VkInstance}(C_NULL)
+#window = GLFW.Window(Ptr{Cvoid}(C_NULL))
+window = Ref{GLFW.Window}()
+instance = Ref{vk.VkInstance}()
 physicalDevice = vk.VK_NULL_HANDLE
 logicalDevice = Ref{vk.VkDevice}()
+graphicsQueue = Ref{vk.VkQueue}()
+surface = Ref{vk.VkSurfaceKHR}()
+presentQueue = Ref{vk.VkQueue}()
 
 #################### 1.Create instance ####################
 function getAppInfo()
@@ -19,17 +23,12 @@ function getAppInfo()
     ))
 end
 
-function getRequiredInstanceExtensions()
+strings2pp(names::Vector{String}) = (ptr = Base.cconvert(Ptr{Cstring}, names); GC.@preserve ptr Base.unsafe_convert(Ptr{Cstring}, ptr))
+
+function getCreateInfo(appInfo)
     glfwExtensions = GLFW.GetRequiredInstanceExtensions();
     extensionCount = length(glfwExtensions)
-    CextNames = Vector{Cstring}(undef, 0)
-    for i = 1 : extensionCount
-        push!(CextNames, pointer(glfwExtensions[i]))
-    end
-    CextNames, extensionCount
-end
 
-function getCreateInfo(appInfo, CextNames, extensionCount)
     createInfo = Ref(vk.VkInstanceCreateInfo(
         vk.VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         C_NULL, #pNext
@@ -38,17 +37,17 @@ function getCreateInfo(appInfo, CextNames, extensionCount)
         0, #layerCount
         C_NULL, #layerNames
         extensionCount,
-        Base.unsafe_convert(Ptr{Cstring}, CextNames)
+        strings2pp(glfwExtensions)
     ))
     createInfo
 end
 
 function createInstance()
     appInfo = getAppInfo()
-    CextNames, extensionCount = getRequiredInstanceExtensions()
-    createInfo = getCreateInfo(appInfo, CextNames, extensionCount)
-
-    return vk.vkCreateInstance(createInfo, C_NULL, instance)
+    createInfo = getCreateInfo(appInfo)
+    err = vk.vkCreateInstance(createInfo, C_NULL, instance)
+    println(err)
+    err
 end
 
 #################### 2.Using validation layers ####################
@@ -65,7 +64,7 @@ function isDeviceSuitable(device)
     end
 
     indices = findQueueFamilies(device)
-    if indices == -1
+    if QueueFamilyIndices_isComplete(indices) == false
         return false
     end
     true
@@ -78,7 +77,7 @@ function pickPhysicalDevice()
         println("failed to find GPUs with Vulkan support!")
     end
 
-    devices = Array{vk.VkPhysicalDevice}(undef, deviceCount[])
+    devices = Vector{vk.VkPhysicalDevice}(undef, deviceCount[])
     vk.vkEnumeratePhysicalDevices(instance[], deviceCount, devices)
 
     for device in devices
@@ -93,18 +92,41 @@ function pickPhysicalDevice()
 end
 
 #################### 4.Queue families ####################
+mutable struct QueueFamilyIndices
+    graphicsFamily::Int32
+    presentFamily::Int32
+
+    QueueFamilyIndices() = new(-1, -1)
+end
+
+function QueueFamilyIndices_isComplete(this)
+    this.graphicsFamily != -1 && this.presentFamily != -1
+end
+
 function findQueueFamilies(device)
     queueFamilyCount = Ref{Cuint}(0)
     vk.vkGetPhysicalDeviceQueueFamilyProperties(device, queueFamilyCount, C_NULL);
     
-    queueFamilies = Array{vk.VkQueueFamilyProperties}(undef, queueFamilyCount[])
+    queueFamilies = Vector{vk.VkQueueFamilyProperties}(undef, queueFamilyCount[])
     vk.vkGetPhysicalDeviceQueueFamilyProperties(device, queueFamilyCount, queueFamilies);
     
-    indices = -1;
+    
+    indices = QueueFamilyIndices();
     i = 0; #queueFamilyIndex should start from 0
     for queueFamily in queueFamilies
-        if (queueFamily.queueCount > 0 && (queueFamily.queueFlags & vk.VK_QUEUE_GRAPHICS_BIT == true))
-            indices = i
+        if (queueFamily.queueCount > 0)
+            if(queueFamily.queueFlags & vk.VK_QUEUE_GRAPHICS_BIT == 1)
+                indices.graphicsFamily = i
+            end
+            
+            presentSupport = Ref{vk.VkBool32}(false);
+            vk.vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, presentSupport);
+            if(presentSupport[] == vk.VK_TRUE)
+                indices.presentFamily = i
+            end
+        end
+
+        if (QueueFamilyIndices_isComplete(indices))
             break
         end
         i += 1
@@ -115,18 +137,22 @@ end
 #################### 5.Create logical device ####################
 function createLogicalDevice()
     indices = findQueueFamilies(physicalDevice)
-    queuePriority = Ref{Float32}(1.0)
-    queueCreateInfo = Ref(vk.VkDeviceQueueCreateInfo(
-        vk.VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-        C_NULL,
-        0, #flag
-        indices, #queueFamilyIndex
-        1, #queueCount
-        Base.unsafe_convert(Ptr{Float32}, queuePriority)
-    ))
 
-    cc = Array{Int32}(undef, 1) # magical code
-    cc[1] = 1 # magical code
+    queueCreateInfos = Vector{vk.VkDeviceQueueCreateInfo}(undef, 0)
+    uniqueQueueFamilies = Set([indices.graphicsFamily, indices.presentFamily])
+
+    for queueFamily in uniqueQueueFamilies
+        queuePriority = Ref{Float32}(1.0)
+        queueCreateInfo = vk.VkDeviceQueueCreateInfo(
+            vk.VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+            C_NULL,
+            0, #flag
+            queueFamily, #queueFamilyIndex
+            1, #queueCount
+            Base.unsafe_convert(Ptr{Float32}, queuePriority)
+        )
+        push!(queueCreateInfos, queueCreateInfo)
+    end
 
     deviceFeatures = Ref{vk.VkPhysicalDeviceFeatures}();
     vk.vkGetPhysicalDeviceFeatures(physicalDevice, deviceFeatures);
@@ -134,13 +160,14 @@ function createLogicalDevice()
     flags = vk.VK_DEBUG_REPORT_ERROR_BIT_EXT |
     vk.VK_DEBUG_REPORT_WARNING_BIT_EXT |
     vk.VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT
+
     createInfo = Ref(vk.VkDeviceCreateInfo(
         vk.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         C_NULL,
         #0, #flags
         flags,
-        1, #createInfoCount
-        Base.unsafe_convert(Ptr{vk.VkDeviceQueueCreateInfo}, queueCreateInfo),
+        length(queueCreateInfos), #createInfoCount
+        pointer(queueCreateInfos),
         0, #enabledLayerCount, VilidationLayers is disabled
         C_NULL, #ppEnabledlayerNames
         0, #enabledExtensionCount
@@ -154,9 +181,14 @@ function createLogicalDevice()
         println(err)
         println("failed to create logical device!")
     end
+
+    vk.vkGetDeviceQueue(logicalDevice[], indices.presentFamily, 0, graphicsQueue)
 end
 
-
+#################### 6.Create window surface ####################
+function createSurface()
+    global surface = GLFW.CreateWindowSurface(instance[], window)
+end
 
 
 
@@ -177,6 +209,7 @@ function initVulkan()
         exit(-1)
     end
 
+    createSurface()
     pickPhysicalDevice()
     createLogicalDevice()
 end
@@ -201,12 +234,13 @@ end
 
 function cleanup()
     vk.vkDestroyDevice(logicalDevice[], C_NULL)
+    vk.vkDestroySurfaceKHR(instance[], surface, C_NULL);
     vk.vkDestroyInstance(instance[], C_NULL)
     GLFW.DestroyWindow(window)
     GLFW.Terminate()
 end
 
-initVulkan()
 initWindow()
+initVulkan()
 mainLoop()
 cleanup()

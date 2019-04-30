@@ -1,10 +1,13 @@
 using VulkanCore
 using GLFW
 
-window = GLFW.Window(Ptr{Cvoid}(C_NULL))
-instance = Ref{vk.VkInstance}(C_NULL)
+#window = GLFW.Window(Ptr{Cvoid}(C_NULL))
+window = Ref{GLFW.Window}()
+instance = Ref{vk.VkInstance}()
 physicalDevice = vk.VK_NULL_HANDLE
 logicalDevice = Ref{vk.VkDevice}()
+graphicsQueue = Ref{vk.VkQueue}()
+surface = Ref{vk.VkSurfaceKHR}()
 
 #################### 1.Create instance ####################
 function getAppInfo()
@@ -21,12 +24,50 @@ end
 
 function getRequiredInstanceExtensions()
     glfwExtensions = GLFW.GetRequiredInstanceExtensions();
+    println(glfwExtensions)
     extensionCount = length(glfwExtensions)
-    CextNames = Vector{Cstring}(undef, 0)
-    for i = 1 : extensionCount
-        push!(CextNames, pointer(glfwExtensions[i]))
+    # CextNames = Vector{Cstring}(undef, 0)
+    # for i = 1 : 2
+    #     push!(CextNames, convert(Cstring, pointer(glfwExtensions[i])))
+    #     #push!(CextNames, convert(Cstring, pointer("a")))
+    # end
+    CextNames = Vector{String}(undef, 0)
+    for i = 1 : 2
+        push!(CextNames, glfwExtensions[i])
+        #push!(CextNames, convert(Cstring, pointer("a")))
     end
-    CextNames, extensionCount
+    # CextNames = Array{Cstring}(undef, 2)
+    # CextNames[1] = pointer(glfwExtensions[2])
+    # CextNames[2] = pointer(glfwExtensions[1])
+    #a = convert(Cstring, pointer("b"))
+    #b = convert(Cstring, pointer("b"))
+    #CextNames = [pointer(glfwExtensions[2]), pointer(glfwExtensions[1])]
+    #CextNames = [convert(Cstring, pointer(glfwExtensions[2])), convert(Cstring, pointer(glfwExtensions[1]))]
+    #CextNames = [pointer(glfwExtensions[2]), pointer(glfwExtensions[1])]
+
+    println(typeof(CextNames))
+    println(typeof(glfwExtensions))
+    #CextNames, extensionCount
+    glfwExtensions, extensionCount
+end
+
+struct ExtensionProperties
+    extensionName::String
+    specVersion::Int
+end
+strings2pp(names::Vector{String}) = (ptr = Base.cconvert(Ptr{Cstring}, names); GC.@preserve ptr Base.unsafe_convert(Ptr{Cstring}, ptr))
+vktuple2string(x) = x |> collect |> String |> s->strip(s, '\0')
+ExtensionProperties(extension::vk.VkExtensionProperties) = ExtensionProperties(vktuple2string(extension.extensionName), Int(extension.specVersion))
+
+function get_supported_extensions()
+    extensionCountRef = Ref{Cuint}(0)
+    vk.vkEnumerateInstanceExtensionProperties(C_NULL, extensionCountRef, C_NULL)
+    extensionCount = extensionCountRef[]
+    supportedExtensions = Vector{vk.VkExtensionProperties}(undef, extensionCount)
+    vk.vkEnumerateInstanceExtensionProperties(C_NULL, extensionCountRef, supportedExtensions)
+     for ext in supportedExtensions
+        println(ExtensionProperties(ext))
+    end
 end
 
 function getCreateInfo(appInfo, CextNames, extensionCount)
@@ -38,8 +79,13 @@ function getCreateInfo(appInfo, CextNames, extensionCount)
         0, #layerCount
         C_NULL, #layerNames
         extensionCount,
-        Base.unsafe_convert(Ptr{Cstring}, CextNames)
+        #Base.unsafe_convert(Ptr{Cstring}, CextNames)
+        #pointer(CextNames)
+        #CextNames
+        strings2pp(CextNames)
+        #Base.cconvert(Ptr{Cstring}, CextNames)
     ))
+    get_supported_extensions()
     createInfo
 end
 
@@ -47,8 +93,9 @@ function createInstance()
     appInfo = getAppInfo()
     CextNames, extensionCount = getRequiredInstanceExtensions()
     createInfo = getCreateInfo(appInfo, CextNames, extensionCount)
-
-    return vk.vkCreateInstance(createInfo, C_NULL, instance)
+    err = vk.vkCreateInstance(createInfo, C_NULL, instance)
+    println(err)
+    err
 end
 
 #################### 2.Using validation layers ####################
@@ -134,6 +181,9 @@ function createLogicalDevice()
     flags = vk.VK_DEBUG_REPORT_ERROR_BIT_EXT |
     vk.VK_DEBUG_REPORT_WARNING_BIT_EXT |
     vk.VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT
+
+    exts = ["VK_KHR_win32_surface"]
+    println("111", exts)
     createInfo = Ref(vk.VkDeviceCreateInfo(
         vk.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         C_NULL,
@@ -154,9 +204,17 @@ function createLogicalDevice()
         println(err)
         println("failed to create logical device!")
     end
+
+    vk.vkGetDeviceQueue(logicalDevice[], indices, 0, graphicsQueue)
 end
 
-
+#################### 6.Create window surface ####################
+function createSurface()
+    println(instance)
+    println(window)
+    surface = GLFW.CreateWindowSurface(instance, window)
+    println(surface[])
+end
 
 
 
@@ -176,9 +234,9 @@ function initVulkan()
         println("failed to create instance!")
         exit(-1)
     end
-
     pickPhysicalDevice()
     createLogicalDevice()
+    createSurface()
 end
 
 function initWindow()
@@ -191,7 +249,7 @@ end
 
 function mainLoop()
     # Loop until the user closes the window
-    while !GLFW.WindowShouldClose(window)
+    while !GLFW.WindowShouldClose(window[])
         # Render here
         render()
         # Poll for and process events
@@ -202,11 +260,11 @@ end
 function cleanup()
     vk.vkDestroyDevice(logicalDevice[], C_NULL)
     vk.vkDestroyInstance(instance[], C_NULL)
-    GLFW.DestroyWindow(window)
+    GLFW.DestroyWindow(window[])
     GLFW.Terminate()
 end
 
-initVulkan()
 initWindow()
+initVulkan()
 mainLoop()
 cleanup()

@@ -1,13 +1,14 @@
 using VulkanCore
 using GLFW
 
-#window = GLFW.Window(Ptr{Cvoid}(C_NULL))
-window = Ref{GLFW.Window}()
+WIDTH = 640
+HEIGHT = 480
+window = GLFW.Window
 instance = Ref{vk.VkInstance}()
 physicalDevice = vk.VK_NULL_HANDLE
 logicalDevice = Ref{vk.VkDevice}()
 graphicsQueue = Ref{vk.VkQueue}()
-surface = Ref{vk.VkSurfaceKHR}()
+surface = vk.VkSurfaceKHR
 presentQueue = Ref{vk.VkQueue}()
 
 #################### 1.Create instance ####################
@@ -25,8 +26,8 @@ end
 
 strings2pp(names::Vector{String}) = (ptr = Base.cconvert(Ptr{Cstring}, names); GC.@preserve ptr Base.unsafe_convert(Ptr{Cstring}, ptr))
 
-function getCreateInfo(appInfo)
-    glfwExtensions = GLFW.GetRequiredInstanceExtensions();
+function getCreateInfo(appInfo::Ref{vk.VkApplicationInfo})
+    glfwExtensions = GLFW.GetRequiredInstanceExtensions()
     extensionCount = length(glfwExtensions)
 
     createInfo = Ref(vk.VkInstanceCreateInfo(
@@ -52,19 +53,19 @@ end
 
 #################### 2.Using validation layers ####################
 #################### 3.Pick Physical device ####################
-function isDeviceSuitable(device)
-    deviceProperties = Ref{vk.VkPhysicalDeviceProperties}();
-    deviceFeatures = Ref{vk.VkPhysicalDeviceFeatures}();
-    vk.vkGetPhysicalDeviceProperties(device, deviceProperties);
-    vk.vkGetPhysicalDeviceFeatures(device, deviceFeatures);
+function isDeviceSuitable(device::vk.VkPhysicalDevice)
+    deviceProperties = Ref{vk.VkPhysicalDeviceProperties}()
+    deviceFeatures = Ref{vk.VkPhysicalDeviceFeatures}()
+    vk.vkGetPhysicalDeviceProperties(device, deviceProperties)
+    vk.vkGetPhysicalDeviceFeatures(device, deviceFeatures)
     if (deviceFeatures[].geometryShader
         #&&deviceProperties[].deviceType == vk.VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU
-        ) == false
+        ) == vk.VK_FALSE
         return false
     end
 
     indices = findQueueFamilies(device)
-    if QueueFamilyIndices_isComplete(indices) == false
+    if !QueueFamilyIndices_isComplete(indices)
         return false
     end
     true
@@ -83,7 +84,7 @@ function pickPhysicalDevice()
     for device in devices
         if (isDeviceSuitable(device))
             global physicalDevice = device
-            break;
+            break
         end
     end
     if (physicalDevice == vk.VK_NULL_HANDLE)
@@ -103,24 +104,24 @@ function QueueFamilyIndices_isComplete(this)
     this.graphicsFamily != -1 && this.presentFamily != -1
 end
 
-function findQueueFamilies(device)
+function findQueueFamilies(device::vk.VkPhysicalDevice)
     queueFamilyCount = Ref{Cuint}(0)
-    vk.vkGetPhysicalDeviceQueueFamilyProperties(device, queueFamilyCount, C_NULL);
+    vk.vkGetPhysicalDeviceQueueFamilyProperties(device, queueFamilyCount, C_NULL)
     
     queueFamilies = Vector{vk.VkQueueFamilyProperties}(undef, queueFamilyCount[])
-    vk.vkGetPhysicalDeviceQueueFamilyProperties(device, queueFamilyCount, queueFamilies);
+    vk.vkGetPhysicalDeviceQueueFamilyProperties(device, queueFamilyCount, queueFamilies)
     
     
-    indices = QueueFamilyIndices();
-    i = 0; #queueFamilyIndex should start from 0
+    indices = QueueFamilyIndices()
+    i = 0 #queueFamilyIndex should start from 0
     for queueFamily in queueFamilies
         if (queueFamily.queueCount > 0)
             if(queueFamily.queueFlags & vk.VK_QUEUE_GRAPHICS_BIT == 1)
                 indices.graphicsFamily = i
             end
             
-            presentSupport = Ref{vk.VkBool32}(false);
-            vk.vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, presentSupport);
+            presentSupport = Ref{vk.VkBool32}(false)
+            vk.vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, presentSupport)
             if(presentSupport[] == vk.VK_TRUE)
                 indices.presentFamily = i
             end
@@ -154,8 +155,8 @@ function createLogicalDevice()
         push!(queueCreateInfos, queueCreateInfo)
     end
 
-    deviceFeatures = Ref{vk.VkPhysicalDeviceFeatures}();
-    vk.vkGetPhysicalDeviceFeatures(physicalDevice, deviceFeatures);
+    deviceFeatures = Ref{vk.VkPhysicalDeviceFeatures}()
+    vk.vkGetPhysicalDeviceFeatures(physicalDevice, deviceFeatures)
 
     flags = vk.VK_DEBUG_REPORT_ERROR_BIT_EXT |
     vk.VK_DEBUG_REPORT_WARNING_BIT_EXT |
@@ -219,7 +220,7 @@ function initWindow()
     GLFW.WindowHint(GLFW.CLIENT_API, GLFW.NO_API)
     GLFW.WindowHint(GLFW.RESIZABLE, false)
     # Create a window and its OpenGL context
-    global window = GLFW.CreateWindow(640, 480, "Vulkan")
+    global window = GLFW.CreateWindow(WIDTH, HEIGHT, "Vulkan")
 end
 
 function mainLoop()
@@ -234,7 +235,7 @@ end
 
 function cleanup()
     vk.vkDestroyDevice(logicalDevice[], C_NULL)
-    vk.vkDestroySurfaceKHR(instance[], surface, C_NULL);
+    vk.vkDestroySurfaceKHR(instance[], surface, C_NULL)
     vk.vkDestroyInstance(instance[], C_NULL)
     GLFW.DestroyWindow(window)
     GLFW.Terminate()

@@ -14,6 +14,8 @@ requiredExtensions = [vk.VK_KHR_SWAPCHAIN_EXTENSION_NAME]
 swapChain = Ref{vk.VkSwapchainKHR}()
 swapChainImageFormat = vk.VkFormat
 swapChainExtent = vk.VkExtent2D
+swapChainImages = Vector{vk.VkImage}()
+swapChainImageViews = Vector{vk.VkImageView}()
 
 #################### 1.Create instance ####################
 function getAppInfo()
@@ -343,12 +345,46 @@ function createSwapChain()
         println("failed to create swap chain!")
     end
 
-    swapChainImages = Vector{vk.VkImage}()
     imageCount = Ref{UInt32}()
     vk.vkGetSwapchainImagesKHR(logicalDevice[], swapChain[], imageCount, C_NULL)
     resize!(swapChainImages, imageCount[])
     vk.vkGetSwapchainImagesKHR(logicalDevice[], swapChain[], imageCount, swapChainImages)
 end
+
+#################### 7.Image view ####################
+function createImageViews()
+    for image in swapChainImages
+        components = vk.VkComponentMapping(
+            vk.VK_COMPONENT_SWIZZLE_IDENTITY, #r::VkComponentSwizzle
+            vk.VK_COMPONENT_SWIZZLE_IDENTITY, #g::VkComponentSwizzle
+            vk.VK_COMPONENT_SWIZZLE_IDENTITY, #b::VkComponentSwizzle
+            vk.VK_COMPONENT_SWIZZLE_IDENTITY #a::VkComponentSwizzle
+        )
+        subresourceRange = vk.VkImageSubresourceRange(
+            vk.VK_IMAGE_ASPECT_COLOR_BIT, #aspectMask::VkImageAspectFlags
+            0, #baseMipLevel::UInt32
+            1, #levelCount::UInt32
+            0, #baseArrayLayer::UInt32
+            1, #layerCount::UInt32
+        )
+        createInfo = Ref(vk.VkImageViewCreateInfo(
+            vk.VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, #sType::VkStructureType
+            C_NULL, #pNext::Ptr{Cvoid}
+            0, #flags::VkImageViewCreateFlags
+            image, #image::VkImage
+            vk.VK_IMAGE_VIEW_TYPE_2D, #viewType::VkImageViewType
+            swapChainImageFormat, #format::VkFormat
+            components, #components::VkComponentMapping
+            subresourceRange, #subresourceRange::VkImageSubresourceRange
+        ))
+        newImageView = Ref{vk.VkImageView}()
+        if (vk.vkCreateImageView(logicalDevice[], createInfo, C_NULL, newImageView) != vk.VK_SUCCESS)
+            println("failed to create image views!")
+        end
+        push!(swapChainImageViews, newImageView[])
+    end
+end
+
 
 function vkDestoryInstanceCallback()
     println("callback")
@@ -371,6 +407,7 @@ function initVulkan()
     pickPhysicalDevice()
     createLogicalDevice()
     createSwapChain()
+    createImageViews()
 end
 
 function initWindow()
@@ -392,6 +429,9 @@ function mainLoop()
 end
 
 function cleanup()
+    for imageView in swapChainImageViews
+        vk.vkDestroyImageView(logicalDevice[], imageView, C_NULL)
+    end
     vk.vkDestroySwapchainKHR(logicalDevice[], swapChain[], C_NULL)
     vk.vkDestroyDevice(logicalDevice[], C_NULL)
     vk.vkDestroySurfaceKHR(instance[], surface, C_NULL)

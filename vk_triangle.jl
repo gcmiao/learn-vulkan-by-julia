@@ -67,7 +67,10 @@ function checkDeviceExtensionSupport(device)
     deviceExtensions = Set(requiredExtensions)
     supportAll = true
     for extension in availableExtensions
-        delete!(deviceExtensions, String(filter(x->x!=0, UInt8[extension.extensionName...])))
+        nameChars = UInt8[extension.extensionName...]
+        extensionName = String(Base.getindex(nameChars, 1:Base.findfirst(x->x==0, nameChars) - 1))
+        delete!(deviceExtensions, extensionName)
+        #delete!(deviceExtensions, String(filter(x->x!=0, UInt8[extension.extensionName...])))
     end
     return length(deviceExtensions) == 0
 end

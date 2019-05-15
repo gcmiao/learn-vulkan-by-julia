@@ -87,8 +87,8 @@ function isDeviceSuitable(device::vk.VkPhysicalDevice)
     end
 
     extensionsSupported = checkDeviceExtensionSupport(device)
-    println(extensionsSupported)
     if !extensionsSupported
+        println("does not support required extensions!")
         return false
     end
 
@@ -96,11 +96,13 @@ function isDeviceSuitable(device::vk.VkPhysicalDevice)
     swapChainSupport = querySwapChainSupport(device)
     swapChainAdequate = length(swapChainSupport.formats) > 0 && length(swapChainSupport.presentModes) > 0
     if !swapChainAdequate
+        println("swap chain is not adequate!")
         return false
     end
 
     indices = findQueueFamilies(device)
     if !QueueFamilyIndices_isComplete(indices)
+        println("queue family indices is not complete!")
         return false
     end
     true

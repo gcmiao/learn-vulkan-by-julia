@@ -16,6 +16,7 @@ swapChainImageFormat = vk.VkFormat
 swapChainExtent = vk.VkExtent2D
 swapChainImages = Vector{vk.VkImage}()
 swapChainImageViews = Vector{vk.VkImageView}()
+renderPass = Ref{vk.VkRenderPass}()
 
 #################### 1.Create instance ####################
 function getAppInfo()
@@ -351,7 +352,7 @@ function createSwapChain()
     vk.vkGetSwapchainImagesKHR(logicalDevice[], swapChain[], imageCount, swapChainImages)
 end
 
-#################### 7.Image view ####################
+#################### 8.Image view ####################
 function createImageViews()
     for image in swapChainImages
         components = vk.VkComponentMapping(
@@ -386,6 +387,56 @@ function createImageViews()
 end
 
 
+#################### 9.0.Render Pass ####################
+function createRenderPass()
+    colorAttachments = [vk.VkAttachmentDescription(
+        0, #flags::VkAttachmentDescriptionFlags
+        swapChainImageFormat, #format::VkFormat
+        vk.VK_SAMPLE_COUNT_1_BIT, #samples::VkSampleCountFlagBits
+        vk.VK_ATTACHMENT_LOAD_OP_CLEAR, #loadOp::VkAttachmentLoadOp
+        vk.VK_ATTACHMENT_STORE_OP_STORE, #storeOp::VkAttachmentStoreOp
+        vk.VK_ATTACHMENT_LOAD_OP_DONT_CARE, #stencilLoadOp::VkAttachmentLoadOp
+        vk.VK_ATTACHMENT_STORE_OP_DONT_CARE, #stencilStoreOp::VkAttachmentStoreOp
+        vk.VK_IMAGE_LAYOUT_UNDEFINED, #initialLayout::VkImageLayout
+        vk.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR #finalLayout::VkImageLayout
+    )]
+
+    colorAttachmentRef = [vk.VkAttachmentReference(
+        0, #attachment::UInt32
+        vk.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL #layout::VkImageLayout
+    )]
+
+
+    subpass = [vk.VkSubpassDescription(
+        0, #flags::VkSubpassDescriptionFlags
+        vk.VK_PIPELINE_BIND_POINT_GRAPHICS, #pipelineBindPoint::VkPipelineBindPoint
+        0, #inputAttachmentCount::UInt32
+        C_NULL, #pInputAttachments::Ptr{VkAttachmentReference}
+        1, #colorAttachmentCount::UInt32
+        pointer(colorAttachmentRef), #pColorAttachments::Ptr{VkAttachmentReference}
+        C_NULL, #pResolveAttachments::Ptr{VkAttachmentReference}
+        C_NULL, #pDepthStencilAttachment::Ptr{VkAttachmentReference}
+        0, #preserveAttachmentCount::UInt32
+        C_NULL, #pPreserveAttachments::Ptr{UInt32}
+    )]
+
+    renderPassInfo = Ref(vk.VkRenderPassCreateInfo(
+        vk.VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO, #sType::VkStructureType
+        C_NULL, #pNext::Ptr{Cvoid}
+        0, #flags::VkRenderPassCreateFlags
+        1, #attachmentCount::UInt32
+        pointer(colorAttachments), #pAttachments::Ptr{VkAttachmentDescription}
+        1, #subpassCount::UInt32
+        pointer(subpass), #pSubpasses::Ptr{VkSubpassDescription}
+        0, #dependencyCount::UInt32
+        C_NULL #pDependencies::Ptr{VkSubpassDependency}
+    ))
+
+    if (vk.vkCreateRenderPass(logicalDevice[], renderPassInfo, C_NULL, renderPass) != vk.VK_SUCCESS)
+        println("failed to create render pass!");
+    end
+end
+
 function vkDestoryInstanceCallback()
     println("callback")
 end
@@ -408,6 +459,7 @@ function initVulkan()
     createLogicalDevice()
     createSwapChain()
     createImageViews()
+    createRenderPass()
 end
 
 function initWindow()
@@ -429,6 +481,7 @@ function mainLoop()
 end
 
 function cleanup()
+    vk.vkDestroyRenderPass(logicalDevice[], renderPass[], C_NULL)
     for imageView in swapChainImageViews
         vk.vkDestroyImageView(logicalDevice[], imageView, C_NULL)
     end

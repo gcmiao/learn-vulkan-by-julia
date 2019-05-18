@@ -17,6 +17,8 @@ swapChainExtent = vk.VkExtent2D
 swapChainImages = Vector{vk.VkImage}()
 swapChainImageViews = Vector{vk.VkImageView}()
 renderPass = Ref{vk.VkRenderPass}()
+pipelineLayout = Ref{vk.VkPipelineLayout}()
+graphicsPipeline = Ref{vk.VkPipeline}()
 
 #################### 1.Create instance ####################
 function getAppInfo()
@@ -386,6 +388,193 @@ function createImageViews()
     end
 end
 
+#################### 9.Graphic pipeline ####################
+function createShaderModule(code, codeSize)
+    createInfo = Ref(vk.VkShaderModuleCreateInfo(
+        vk.VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, #sType::VkStructureType
+        C_NULL, #pNext::Ptr{Cvoid}
+        0, #flags::VkShaderModuleCreateFlags
+        codeSize, #codeSize::Csize_t
+        code, #pCode::Ptr{UInt32}
+    ))
+
+    shaderModule = Ref{vk.VkShaderModule}()
+    if (vk.vkCreateShaderModule(logicalDevice[], createInfo, C_NULL, shaderModule) != vk.VK_SUCCESS)
+        println("failed to create shader module!");
+    end
+    shaderModule[]
+end
+
+function readFile(filePath)
+    file = Base.read(filePath)
+    size = filesize(filePath)
+    file, size
+end
+
+function createGraphicsPipeline()
+    vertShaderCode, vertSize = readFile("vert.spv");
+    fragShaderCode, fragSize = readFile("frag.spv");
+
+    vertShaderModule = createShaderModule(pointer(vertShaderCode), vertSize)
+    fragShaderModule = createShaderModule(pointer(fragShaderCode), fragSize)
+
+    vertShaderStageInfo = vk.VkPipelineShaderStageCreateInfo(
+        vk.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, #sType::VkStructureType
+        C_NULL, #pNext::Ptr{Cvoid}
+        0, #flags::VkPipelineShaderStageCreateFlags
+        vk.VK_SHADER_STAGE_VERTEX_BIT, #stage::VkShaderStageFlagBits
+        vertShaderModule, #_module::VkShaderModule
+        Base.unsafe_convert(Cstring, "main"), #pName::Cstring
+        C_NULL #pSpecializationInfo::Ptr{VkSpecializationInfo}
+    )
+
+    fragShaderStageInfo = vk.VkPipelineShaderStageCreateInfo(
+        vk.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, #sType::VkStructureType
+        C_NULL, #pNext::Ptr{Cvoid}
+        0, #flags::VkPipelineShaderStageCreateFlags
+        vk.VK_SHADER_STAGE_FRAGMENT_BIT, #stage::VkShaderStageFlagBits
+        fragShaderModule, #_module::VkShaderModule
+        Base.unsafe_convert(Cstring, "main"), #pName::Cstring
+        C_NULL #pSpecializationInfo::Ptr{VkSpecializationInfo}
+    )
+
+    shaderStages = [vertShaderStageInfo, fragShaderStageInfo]
+
+    vertexInputInfo = [vk.VkPipelineVertexInputStateCreateInfo(
+        vk.VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO, #sType::VkStructureType
+        C_NULL, #pNext::Ptr{Cvoid}
+        0, #flags::VkPipelineVertexInputStateCreateFlags
+        0, #vertexBindingDescriptionCount::UInt32
+        C_NULL, #pVertexBindingDescriptions::Ptr{VkVertexInputBindingDescription}
+        0, #vertexAttributeDescriptionCount::UInt32
+        C_NULL, #pVertexAttributeDescriptions::Ptr{VkVertexInputAttributeDescription}
+    )]
+
+    inputAssembly = [vk.VkPipelineInputAssemblyStateCreateInfo(
+        vk.VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO, #sType::VkStructureType
+        C_NULL, #pNext::Ptr{Cvoid}
+        0, #flags::VkPipelineInputAssemblyStateCreateFlags
+        vk.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, #topology::VkPrimitiveTopology
+        vk.VK_FALSE #primitiveRestartEnable::VkBool32
+    )]
+
+    viewports = [vk.VkViewport(
+        0.0, #x::Cfloat
+        0.0, #y::Cfloat
+        swapChainExtent.width, #width::Cfloat
+        swapChainExtent.height, #height::Cfloat
+        0.0, #minDepth::Cfloat
+        1.0 #maxDepth::Cfloat
+    )]
+
+    scissors = [vk.VkRect2D(
+        vk.VkOffset2D(0, 0), #offset::VkOffset2D
+        swapChainExtent, #extent::VkExtent2D
+    )]
+
+    viewportState = [vk.VkPipelineViewportStateCreateInfo(
+        vk.VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, #sType::VkStructureType
+        C_NULL, #pNext::Ptr{Cvoid}
+        0, #flags::VkPipelineViewportStateCreateFlags
+        1, #viewportCount::UInt32
+        pointer(viewports), #pViewports::Ptr{VkViewport}
+        1, #scissorCount::UInt32
+        pointer(scissors) #pScissors::Ptr{VkRect2D}
+    )]
+
+    rasterizer = [vk.VkPipelineRasterizationStateCreateInfo(
+        vk.VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO, #sType::VkStructureType
+        C_NULL, #pNext::Ptr{Cvoid}
+        0, #flags::VkPipelineRasterizationStateCreateFlags
+        vk.VK_FALSE, #depthClampEnable::VkBool32
+        vk.VK_FALSE, #rasterizerDiscardEnable::VkBool32
+        vk.VK_POLYGON_MODE_FILL, #polygonMode::VkPolygonMode
+        vk.VK_CULL_MODE_BACK_BIT, #cullMode::VkCullModeFlags
+        vk.VK_FRONT_FACE_CLOCKWISE, #frontFace::VkFrontFace
+        vk.VK_FALSE, #depthBiasEnable::VkBool32
+        0.0, #depthBiasConstantFactor::Cfloat
+        0.0, #depthBiasClamp::Cfloat
+        0.0, #depthBiasSlopeFactor::Cfloat
+        1.0 #lineWidth::Cfloat
+    )]
+
+    multisampling = [vk.VkPipelineMultisampleStateCreateInfo(
+        vk.VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO, #sType::VkStructureType
+        C_NULL, #pNext::Ptr{Cvoid}
+        0, #flags::VkPipelineMultisampleStateCreateFlags
+        vk.VK_SAMPLE_COUNT_1_BIT, #rasterizationSamples::VkSampleCountFlagBits
+        vk.VK_FALSE, #sampleShadingEnable::VkBool32
+        1.0, #minSampleShading::Cfloat
+        C_NULL,#pSampleMask::Ptr{VkSampleMask}
+        vk.VK_FALSE, #alphaToCoverageEnable::VkBool32
+        vk.VK_FALSE #alphaToOneEnable::VkBool32
+    )]
+
+    colorBlendAttachment = [vk.VkPipelineColorBlendAttachmentState(
+        vk.VK_FALSE, #blendEnable::VkBool32
+        vk.VK_BLEND_FACTOR_ONE, #srcColorBlendFactor::VkBlendFactor
+        vk.VK_BLEND_FACTOR_ZERO, #dstColorBlendFactor::VkBlendFactor
+        vk.VK_BLEND_OP_ADD, #colorBlendOp::VkBlendOp
+        vk.VK_BLEND_FACTOR_ONE, #srcAlphaBlendFactor::VkBlendFactor
+        vk.VK_BLEND_FACTOR_ZERO, #dstAlphaBlendFactor::VkBlendFactor
+        vk.VK_BLEND_OP_ADD, #alphaBlendOp::VkBlendOp
+        vk.VK_COLOR_COMPONENT_R_BIT | vk.VK_COLOR_COMPONENT_G_BIT | vk.VK_COLOR_COMPONENT_B_BIT | vk.VK_COLOR_COMPONENT_A_BIT #colorWriteMask::VkColorComponentFlags
+    )]
+
+    colorBlending = [vk.VkPipelineColorBlendStateCreateInfo(
+        vk.VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO, #sType::VkStructureType
+        C_NULL, #pNext::Ptr{Cvoid}
+        0, #flags::VkPipelineColorBlendStateCreateFlags
+        vk.VK_FALSE, #logicOpEnable::VkBool32
+        vk.VK_LOGIC_OP_COPY, #logicOp::VkLogicOp
+        1, #attachmentCount::UInt32
+        pointer(colorBlendAttachment), #pAttachments::Ptr{VkPipelineColorBlendAttachmentState}
+        (0.0, 0.0, 0.0, 0.0), #blendConstants::NTuple{4, Cfloat}
+    )]
+
+    pipelineLayoutInfo = Ref(vk.VkPipelineLayoutCreateInfo(
+        vk.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, #sType::VkStructureType
+        C_NULL, #pNext::Ptr{Cvoid}
+        0, #flags::VkPipelineLayoutCreateFlags
+        0, #setLayoutCount::UInt32
+        C_NULL, #pSetLayouts::Ptr{VkDescriptorSetLayout}
+        0, #pushConstantRangeCount::UInt32
+        C_NULL #pPushConstantRanges::Ptr{VkPushConstantRange}
+    ))
+    
+    if (vk.vkCreatePipelineLayout(logicalDevice[], pipelineLayoutInfo, C_NULL, pipelineLayout) != vk.VK_SUCCESS)
+        println("failed to create pipeline layout!")
+    end
+
+    pipelineInfo = Ref(vk.VkGraphicsPipelineCreateInfo(
+        vk.VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, #sType::VkStructureType
+        C_NULL, #pNext::Ptr{Cvoid}
+        0, #flags::VkPipelineCreateFlags
+        2, #stageCount::UInt32
+        pointer(shaderStages), #pStages::Ptr{VkPipelineShaderStageCreateInfo}
+        pointer(vertexInputInfo), #pVertexInputState::Ptr{VkPipelineVertexInputStateCreateInfo}
+        pointer(inputAssembly), #pInputAssemblyState::Ptr{VkPipelineInputAssemblyStateCreateInfo}
+        C_NULL, #pTessellationState::Ptr{VkPipelineTessellationStateCreateInfo}
+        pointer(viewportState), #pViewportState::Ptr{VkPipelineViewportStateCreateInfo}
+        pointer(rasterizer), #pRasterizationState::Ptr{VkPipelineRasterizationStateCreateInfo}
+        pointer(multisampling), #pMultisampleState::Ptr{VkPipelineMultisampleStateCreateInfo}
+        C_NULL, #pDepthStencilState::Ptr{VkPipelineDepthStencilStateCreateInfo}
+        pointer(colorBlending), #pColorBlendState::Ptr{VkPipelineColorBlendStateCreateInfo}
+        C_NULL, #pDynamicState::Ptr{VkPipelineDynamicStateCreateInfo}
+        pipelineLayout[], #layout::VkPipelineLayout
+        renderPass[], #renderPass::VkRenderPass
+        0, #subpass::UInt32
+        vk.VK_NULL_HANDLE, #basePipelineHandle::VkPipeline
+        -1 #basePipelineIndex::Int32
+    ))
+
+    if (vk.vkCreateGraphicsPipelines(logicalDevice[], vk.VK_NULL_HANDLE, 1, pipelineInfo, C_NULL, graphicsPipeline) != vk.VK_SUCCESS)
+        println("failed to create graphics pipeline!");
+    end
+
+    vk.vkDestroyShaderModule(logicalDevice[], fragShaderModule, C_NULL)
+    vk.vkDestroyShaderModule(logicalDevice[], vertShaderModule, C_NULL)
+end
 
 #################### 9.0.Render Pass ####################
 function createRenderPass()
@@ -460,6 +649,7 @@ function initVulkan()
     createSwapChain()
     createImageViews()
     createRenderPass()
+    createGraphicsPipeline()
 end
 
 function initWindow()
@@ -481,6 +671,8 @@ function mainLoop()
 end
 
 function cleanup()
+    vk.vkDestroyPipeline(logicalDevice[], graphicsPipeline[], C_NULL)
+    vk.vkDestroyPipelineLayout(logicalDevice[], pipelineLayout[], C_NULL)
     vk.vkDestroyRenderPass(logicalDevice[], renderPass[], C_NULL)
     for imageView in swapChainImageViews
         vk.vkDestroyImageView(logicalDevice[], imageView, C_NULL)

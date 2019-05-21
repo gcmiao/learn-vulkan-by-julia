@@ -20,6 +20,8 @@ renderPass = Ref{vk.VkRenderPass}()
 pipelineLayout = Ref{vk.VkPipelineLayout}()
 graphicsPipeline = Ref{vk.VkPipeline}()
 swapChainFramebuffers = Vector{vk.VkFramebuffer}()
+commandPool = Ref{vk.VkCommandPool}()
+commandBuffers = Vector{vk.VkCommandBuffer}()
 
 #################### 1.Create instance ####################
 function getAppInfo()
@@ -651,6 +653,67 @@ function createFramebuffers()
     end
 end
 
+#################### 11.Create command pool ####################
+function createCommandPool()
+    queueFamilyIndices = findQueueFamilies(physicalDevice)
+    poolInfo = Ref(vk.VkCommandPoolCreateInfo(
+        vk.VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, #sType::VkStructureType
+        C_NULL, #pNext::Ptr{Cvoid}
+        0, #flags::VkCommandPoolCreateFlags
+        queueFamilyIndices.graphicsFamily #queueFamilyIndex::UInt32
+    ))
+
+    if (vk.vkCreateCommandPool(logicalDevice[], poolInfo, C_NULL, commandPool) != vk.VK_SUCCESS)
+        println("failed to create command pool!")
+    end
+end
+
+function createCommandBuffers()
+    resize!(commandBuffers, length(swapChainFramebuffers))
+
+    allocInfo = Ref(vk.VkCommandBufferAllocateInfo(
+        vk.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, #sType::VkStructureType
+        C_NULL, #pNext::Ptr{Cvoid}
+        commandPool[], #commandPool::VkCommandPool
+        vk.VK_COMMAND_BUFFER_LEVEL_PRIMARY, #level::VkCommandBufferLevel
+        length(commandBuffers) #commandBufferCount::UInt32
+    ))
+    if (vk.vkAllocateCommandBuffers(logicalDevice[], allocInfo, pointer(commandBuffers)) != vk.VK_SUCCESS)
+        println("failed to allocate command buffers!")
+    end
+
+    for i = 1 : length(commandBuffers)
+        beginInfo = Ref(vk.VkCommandBufferBeginInfo(
+            vk.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, #sType::VkStructureType
+            C_NULL, #pNext::Ptr{Cvoid}
+            vk.VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT, #flags::VkCommandBufferUsageFlags
+            C_NULL #pInheritanceInfo::Ptr{VkCommandBufferInheritanceInfo}
+        ))
+        if (vk.vkBeginCommandBuffer(commandBuffers[i], beginInfo) != vk.VK_SUCCESS)
+            println("failed to begin recording command buffer!")
+        end
+        
+        clearColor = [vk.VkClearValue(vk.VkClearColorValue((0.0, 0.0, 0.0, 1.0)))]
+        renderPassInfo = Ref(vk.VkRenderPassBeginInfo(
+            vk.VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, #sType::VkStructureType
+            C_NULL, #pNext::Ptr{Cvoid}
+            renderPass[], #renderPass::VkRenderPass
+            swapChainFramebuffers[i], #framebuffer::VkFramebuffer
+            vk.VkRect2D(vk.VkOffset2D(0, 0), swapChainExtent), #renderArea::VkRect2D
+            1, #clearValueCount::UInt32
+            pointer(clearColor) #pClearValues::Ptr{VkClearValue}
+        ))
+
+        vk.vkCmdBeginRenderPass(commandBuffers[i], renderPassInfo, vk.VK_SUBPASS_CONTENTS_INLINE)
+        vk.vkCmdBindPipeline(commandBuffers[i], vk.VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline[])
+        vk.vkCmdDraw(commandBuffers[i], 3, 1, 0, 0)
+        vk.vkCmdEndRenderPass(commandBuffers[i])
+        if (vk.vkEndCommandBuffer(commandBuffers[i]) != vk.VK_SUCCESS)
+            println("failed to record command buffer!")
+        end
+    end
+end
+
 function vkDestoryInstanceCallback()
     println("callback")
 end
@@ -676,6 +739,8 @@ function initVulkan()
     createRenderPass()
     createGraphicsPipeline()
     createFramebuffers()
+    createCommandPool()
+    createCommandBuffers()
 end
 
 function initWindow()
@@ -697,6 +762,7 @@ function mainLoop()
 end
 
 function cleanup()
+    vk.vkDestroyCommandPool(logicalDevice[], commandPool[], C_NULL)
     for framebuffer in swapChainFramebuffers
         vk.vkDestroyFramebuffer(logicalDevice[], framebuffer, C_NULL)
     end

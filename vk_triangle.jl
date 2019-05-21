@@ -19,6 +19,7 @@ swapChainImageViews = Vector{vk.VkImageView}()
 renderPass = Ref{vk.VkRenderPass}()
 pipelineLayout = Ref{vk.VkPipelineLayout}()
 graphicsPipeline = Ref{vk.VkPipeline}()
+swapChainFramebuffers = Vector{vk.VkFramebuffer}()
 
 #################### 1.Create instance ####################
 function getAppInfo()
@@ -400,7 +401,7 @@ function createShaderModule(code, codeSize)
 
     shaderModule = Ref{vk.VkShaderModule}()
     if (vk.vkCreateShaderModule(logicalDevice[], createInfo, C_NULL, shaderModule) != vk.VK_SUCCESS)
-        println("failed to create shader module!");
+        println("failed to create shader module!")
     end
     shaderModule[]
 end
@@ -412,8 +413,8 @@ function readFile(filePath)
 end
 
 function createGraphicsPipeline()
-    vertShaderCode, vertSize = readFile("vert.spv");
-    fragShaderCode, fragSize = readFile("frag.spv");
+    vertShaderCode, vertSize = readFile("vert.spv")
+    fragShaderCode, fragSize = readFile("frag.spv")
 
     vertShaderModule = createShaderModule(pointer(vertShaderCode), vertSize)
     fragShaderModule = createShaderModule(pointer(fragShaderCode), fragSize)
@@ -569,7 +570,7 @@ function createGraphicsPipeline()
     ))
 
     if (vk.vkCreateGraphicsPipelines(logicalDevice[], vk.VK_NULL_HANDLE, 1, pipelineInfo, C_NULL, graphicsPipeline) != vk.VK_SUCCESS)
-        println("failed to create graphics pipeline!");
+        println("failed to create graphics pipeline!")
     end
 
     vk.vkDestroyShaderModule(logicalDevice[], fragShaderModule, C_NULL)
@@ -622,7 +623,31 @@ function createRenderPass()
     ))
 
     if (vk.vkCreateRenderPass(logicalDevice[], renderPassInfo, C_NULL, renderPass) != vk.VK_SUCCESS)
-        println("failed to create render pass!");
+        println("failed to create render pass!")
+    end
+end
+
+#################### 10.Create framebuffers ####################
+function createFramebuffers()
+    resize!(swapChainFramebuffers, length(swapChainImageViews))
+    for i = 1 : length(swapChainImageViews)
+        attachments = [swapChainImageViews[i]]
+        framebufferInfo = Ref(vk.VkFramebufferCreateInfo(
+            vk.VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO, #sType::VkStructureType
+            C_NULL, #pNext::Ptr{Cvoid}
+            0, #flags::VkFramebufferCreateFlags
+            renderPass[], #renderPass::VkRenderPass
+            1, #attachmentCount::UInt32
+            pointer(attachments), #pAttachments::Ptr{VkImageView}
+            swapChainExtent.width, #width::UInt32
+            swapChainExtent.height, #height::UInt32
+            1 #layers::UInt32
+        ))
+        framebuffer= Ref{vk.VkFramebuffer}()
+        if (vk.vkCreateFramebuffer(logicalDevice[], framebufferInfo, C_NULL, framebuffer) != vk.VK_SUCCESS)
+            println("failed to create framebuffer!")
+        end
+        swapChainFramebuffers[i] = framebuffer[]
     end
 end
 
@@ -650,6 +675,7 @@ function initVulkan()
     createImageViews()
     createRenderPass()
     createGraphicsPipeline()
+    createFramebuffers()
 end
 
 function initWindow()
@@ -671,6 +697,9 @@ function mainLoop()
 end
 
 function cleanup()
+    for framebuffer in swapChainFramebuffers
+        vk.vkDestroyFramebuffer(logicalDevice[], framebuffer, C_NULL)
+    end
     vk.vkDestroyPipeline(logicalDevice[], graphicsPipeline[], C_NULL)
     vk.vkDestroyPipelineLayout(logicalDevice[], pipelineLayout[], C_NULL)
     vk.vkDestroyRenderPass(logicalDevice[], renderPass[], C_NULL)

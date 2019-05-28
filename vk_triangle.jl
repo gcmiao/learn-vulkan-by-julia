@@ -22,6 +22,8 @@ graphicsPipeline = Ref{vk.VkPipeline}()
 swapChainFramebuffers = Vector{vk.VkFramebuffer}()
 commandPool = Ref{vk.VkCommandPool}()
 commandBuffers = Vector{vk.VkCommandBuffer}()
+imageAvailableSemaphore = Ref{vk.VkSemaphore}()
+renderFinishedSemaphore = Ref{vk.VkSemaphore}()
 
 #################### 1.Create instance ####################
 function getAppInfo()
@@ -612,6 +614,16 @@ function createRenderPass()
         C_NULL, #pPreserveAttachments::Ptr{UInt32}
     )]
 
+    dependency = [vk.VkSubpassDependency(
+        vk.VK_SUBPASS_EXTERNAL, #srcSubpass::UInt32
+        0, #dstSubpass::UInt32
+        vk.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, #srcStageMask::VkPipelineStageFlags
+        vk.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, #dstStageMask::VkPipelineStageFlags
+        0, #srcAccessMask::VkAccessFlags
+        vk.VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | vk.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, #dstAccessMask::VkAccessFlags
+        0 #dependencyFlags::VkDependencyFlags
+    )]
+
     renderPassInfo = Ref(vk.VkRenderPassCreateInfo(
         vk.VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO, #sType::VkStructureType
         C_NULL, #pNext::Ptr{Cvoid}
@@ -620,8 +632,8 @@ function createRenderPass()
         pointer(colorAttachments), #pAttachments::Ptr{VkAttachmentDescription}
         1, #subpassCount::UInt32
         pointer(subpass), #pSubpasses::Ptr{VkSubpassDescription}
-        0, #dependencyCount::UInt32
-        C_NULL #pDependencies::Ptr{VkSubpassDependency}
+        1, #dependencyCount::UInt32
+        pointer(dependency) #pDependencies::Ptr{VkSubpassDependency}
     ))
 
     if (vk.vkCreateRenderPass(logicalDevice[], renderPassInfo, C_NULL, renderPass) != vk.VK_SUCCESS)
@@ -714,15 +726,61 @@ function createCommandBuffers()
     end
 end
 
+#################### 12.Rendering ####################
+
+function drawFrame()
+    imageIndex = Ref{UInt32}()
+    vk.vkAcquireNextImageKHR(logicalDevice[], swapChain[], typemax(UInt64), imageAvailableSemaphore[], vk.VK_NULL_HANDLE, imageIndex)
+    waitSemaphores = [imageAvailableSemaphore[]]
+    waitDstStageMask = [vk.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT]
+    signalSemaphores = [renderFinishedSemaphore[]]
+    submitInfo = Ref(vk.VkSubmitInfo(
+        vk.VK_STRUCTURE_TYPE_SUBMIT_INFO, #sType::VkStructureType
+        C_NULL, #pNext::Ptr{Cvoid}
+        1, #waitSemaphoreCount::UInt32
+        pointer(waitSemaphores), #pWaitSemaphores::Ptr{VkSemaphore}
+        pointer(waitDstStageMask), #pWaitDstStageMask::Ptr{VkPipelineStageFlags}
+        1, #commandBufferCount::UInt32
+        pointer_from_objref(Ref(commandBuffers[imageIndex[] + 1])), #pCommandBuffers::Ptr{VkCommandBuffer}
+        1, #signalSemaphoreCount::UInt32
+        pointer(signalSemaphores) #pSignalSemaphores::Ptr{VkSemaphore}
+    ))
+
+    if (vk.vkQueueSubmit(graphicsQueue[], 1, submitInfo, vk.VK_NULL_HANDLE) != vk.VK_SUCCESS)
+        println("failed to submit draw command buffer!");
+    end
+
+    presentInfo = Ref(vk.VkPresentInfoKHR(
+        vk.VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, #sType::VkStructureType
+        C_NULL, #pNext::Ptr{Cvoid}
+        1, #waitSemaphoreCount::UInt32
+        pointer(signalSemaphores), #pWaitSemaphores::Ptr{VkSemaphore}
+        1, #swapchainCount::UInt32
+        pointer_from_objref(swapChain), #pSwapchains::Ptr{VkSwapchainKHR}
+        pointer_from_objref(imageIndex), #pImageIndices::Ptr{UInt32}
+        C_NULL #pResults::Ptr{VkResult}
+    ))
+    vk.vkQueuePresentKHR(presentQueue[], presentInfo);
+    vk.vkDeviceWaitIdle(logicalDevice[]);
+end
+
+function createSemaphores()
+    semaphoreInfo = Ref(vk.VkSemaphoreCreateInfo(
+        vk.VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, #sType::VkStructureType
+        C_NULL, #pNext::Ptr{Cvoid}
+        0 #flags::VkSemaphoreCreateFlags
+    ))
+    if (vk.vkCreateSemaphore(logicalDevice[], semaphoreInfo, C_NULL, imageAvailableSemaphore) != vk.VK_SUCCESS ||
+        vk.vkCreateSemaphore(logicalDevice[], semaphoreInfo, C_NULL, renderFinishedSemaphore) != vk.VK_SUCCESS)
+        println("failed to create semaphores!");
+    end
+end
+
 function vkDestoryInstanceCallback()
     println("callback")
 end
 
 
-
-function render()
-    #println("in render")
-end
 
 #################### 0.Setup ####################
 function initVulkan()
@@ -741,6 +799,7 @@ function initVulkan()
     createFramebuffers()
     createCommandPool()
     createCommandBuffers()
+    createSemaphores()
 end
 
 function initWindow()
@@ -754,14 +813,17 @@ end
 function mainLoop()
     # Loop until the user closes the window
     while !GLFW.WindowShouldClose(window)
-        # Render here
-        render()
         # Poll for and process events
         GLFW.PollEvents()
+        # Render here
+        drawFrame()
     end
+    vk.vkDeviceWaitIdle(logicalDevice[]);
 end
 
 function cleanup()
+    vk.vkDestroySemaphore(logicalDevice[], renderFinishedSemaphore[], C_NULL);
+    vk.vkDestroySemaphore(logicalDevice[], imageAvailableSemaphore[], C_NULL);
     vk.vkDestroyCommandPool(logicalDevice[], commandPool[], C_NULL)
     for framebuffer in swapChainFramebuffers
         vk.vkDestroyFramebuffer(logicalDevice[], framebuffer, C_NULL)

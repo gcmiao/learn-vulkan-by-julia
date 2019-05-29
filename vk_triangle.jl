@@ -22,8 +22,11 @@ graphicsPipeline = Ref{vk.VkPipeline}()
 swapChainFramebuffers = Vector{vk.VkFramebuffer}()
 commandPool = Ref{vk.VkCommandPool}()
 commandBuffers = Vector{vk.VkCommandBuffer}()
-imageAvailableSemaphore = Ref{vk.VkSemaphore}()
-renderFinishedSemaphore = Ref{vk.VkSemaphore}()
+MAX_FRAMES_IN_FLIGHT = 2
+currentFrame = 1
+imageAvailableSemaphores = Vector{vk.VkSemaphore}()
+renderFinishedSemaphores = Vector{vk.VkSemaphore}()
+inFlightFences = Vector{vk.VkFence}()
 
 #################### 1.Create instance ####################
 function getAppInfo()
@@ -727,13 +730,16 @@ function createCommandBuffers()
 end
 
 #################### 12.Rendering ####################
-
 function drawFrame()
+    pFence = pointer_from_objref(Ref(inFlightFences[currentFrame]))
+    vk.vkWaitForFences(logicalDevice[], 1, pFence, vk.VK_TRUE, typemax(UInt64))
+    vk.vkResetFences(logicalDevice[], 1, pFence)
+
     imageIndex = Ref{UInt32}()
-    vk.vkAcquireNextImageKHR(logicalDevice[], swapChain[], typemax(UInt64), imageAvailableSemaphore[], vk.VK_NULL_HANDLE, imageIndex)
-    waitSemaphores = [imageAvailableSemaphore[]]
+    vk.vkAcquireNextImageKHR(logicalDevice[], swapChain[], typemax(UInt64), imageAvailableSemaphores[currentFrame], vk.VK_NULL_HANDLE, imageIndex)
+    waitSemaphores = [imageAvailableSemaphores[currentFrame]]
     waitDstStageMask = [vk.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT]
-    signalSemaphores = [renderFinishedSemaphore[]]
+    signalSemaphores = [renderFinishedSemaphores[currentFrame]]
     submitInfo = Ref(vk.VkSubmitInfo(
         vk.VK_STRUCTURE_TYPE_SUBMIT_INFO, #sType::VkStructureType
         C_NULL, #pNext::Ptr{Cvoid}
@@ -746,8 +752,8 @@ function drawFrame()
         pointer(signalSemaphores) #pSignalSemaphores::Ptr{VkSemaphore}
     ))
 
-    if (vk.vkQueueSubmit(graphicsQueue[], 1, submitInfo, vk.VK_NULL_HANDLE) != vk.VK_SUCCESS)
-        println("failed to submit draw command buffer!");
+    if (vk.vkQueueSubmit(graphicsQueue[], 1, submitInfo, inFlightFences[currentFrame]) != vk.VK_SUCCESS)
+        println("failed to submit draw command buffer!")
     end
 
     presentInfo = Ref(vk.VkPresentInfoKHR(
@@ -760,19 +766,37 @@ function drawFrame()
         pointer_from_objref(imageIndex), #pImageIndices::Ptr{UInt32}
         C_NULL #pResults::Ptr{VkResult}
     ))
-    vk.vkQueuePresentKHR(presentQueue[], presentInfo);
-    vk.vkDeviceWaitIdle(logicalDevice[]);
+    vk.vkQueuePresentKHR(presentQueue[], presentInfo)
+    vk.vkDeviceWaitIdle(logicalDevice[])
+    global currentFrame = currentFrame % MAX_FRAMES_IN_FLIGHT + 1
 end
 
-function createSemaphores()
+function createSyncObjects()
+    resize!(imageAvailableSemaphores, MAX_FRAMES_IN_FLIGHT)
+    resize!(renderFinishedSemaphores, MAX_FRAMES_IN_FLIGHT)
+    resize!(inFlightFences, MAX_FRAMES_IN_FLIGHT)
     semaphoreInfo = Ref(vk.VkSemaphoreCreateInfo(
         vk.VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, #sType::VkStructureType
         C_NULL, #pNext::Ptr{Cvoid}
         0 #flags::VkSemaphoreCreateFlags
     ))
-    if (vk.vkCreateSemaphore(logicalDevice[], semaphoreInfo, C_NULL, imageAvailableSemaphore) != vk.VK_SUCCESS ||
-        vk.vkCreateSemaphore(logicalDevice[], semaphoreInfo, C_NULL, renderFinishedSemaphore) != vk.VK_SUCCESS)
-        println("failed to create semaphores!");
+    fenceInfo = Ref(vk.VkFenceCreateInfo(
+        vk.VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, #sType::VkStructureType
+        C_NULL, #pNext::Ptr{Cvoid}
+        vk.VK_FENCE_CREATE_SIGNALED_BIT #flags::VkFenceCreateFlags
+    ))
+    for i = 1 : MAX_FRAMES_IN_FLIGHT
+        imageAvailableSemaphore = Ref{vk.VkSemaphore}()
+        renderFinishedSemaphore = Ref{vk.VkSemaphore}()
+        inFlightFence = Ref{vk.VkFence}()
+        if (vk.vkCreateSemaphore(logicalDevice[], semaphoreInfo, C_NULL, imageAvailableSemaphore) != vk.VK_SUCCESS ||
+            vk.vkCreateSemaphore(logicalDevice[], semaphoreInfo, C_NULL, renderFinishedSemaphore) != vk.VK_SUCCESS ||
+            vk.vkCreateFence(logicalDevice[], fenceInfo, C_NULL, inFlightFence) != vk.VK_SUCCESS)
+            println("failed to create synchronization objects for a frame!")
+        end
+        imageAvailableSemaphores[i] = imageAvailableSemaphore[]
+        renderFinishedSemaphores[i] = renderFinishedSemaphore[]
+        inFlightFences[i] = inFlightFence[]
     end
 end
 
@@ -799,7 +823,7 @@ function initVulkan()
     createFramebuffers()
     createCommandPool()
     createCommandBuffers()
-    createSemaphores()
+    createSyncObjects()
 end
 
 function initWindow()
@@ -818,12 +842,15 @@ function mainLoop()
         # Render here
         drawFrame()
     end
-    vk.vkDeviceWaitIdle(logicalDevice[]);
+    vk.vkDeviceWaitIdle(logicalDevice[])
 end
 
 function cleanup()
-    vk.vkDestroySemaphore(logicalDevice[], renderFinishedSemaphore[], C_NULL);
-    vk.vkDestroySemaphore(logicalDevice[], imageAvailableSemaphore[], C_NULL);
+    for i = 1 : MAX_FRAMES_IN_FLIGHT
+        vk.vkDestroySemaphore(logicalDevice[], renderFinishedSemaphores[i], C_NULL)
+        vk.vkDestroySemaphore(logicalDevice[], imageAvailableSemaphores[i], C_NULL)
+        vk.vkDestroyFence(logicalDevice[], inFlightFences[i], C_NULL)
+    end
     vk.vkDestroyCommandPool(logicalDevice[], commandPool[], C_NULL)
     for framebuffer in swapChainFramebuffers
         vk.vkDestroyFramebuffer(logicalDevice[], framebuffer, C_NULL)

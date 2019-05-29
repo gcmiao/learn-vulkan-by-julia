@@ -448,7 +448,7 @@ function createGraphicsPipeline()
 
     shaderStages = [vertShaderStageInfo, fragShaderStageInfo]
 
-    vertexInputInfo = [vk.VkPipelineVertexInputStateCreateInfo(
+    vertexInputInfo = Ref(vk.VkPipelineVertexInputStateCreateInfo(
         vk.VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO, #sType::VkStructureType
         C_NULL, #pNext::Ptr{Cvoid}
         0, #flags::VkPipelineVertexInputStateCreateFlags
@@ -456,15 +456,15 @@ function createGraphicsPipeline()
         C_NULL, #pVertexBindingDescriptions::Ptr{VkVertexInputBindingDescription}
         0, #vertexAttributeDescriptionCount::UInt32
         C_NULL, #pVertexAttributeDescriptions::Ptr{VkVertexInputAttributeDescription}
-    )]
+    ))
 
-    inputAssembly = [vk.VkPipelineInputAssemblyStateCreateInfo(
+    inputAssembly = Ref(vk.VkPipelineInputAssemblyStateCreateInfo(
         vk.VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO, #sType::VkStructureType
         C_NULL, #pNext::Ptr{Cvoid}
         0, #flags::VkPipelineInputAssemblyStateCreateFlags
         vk.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, #topology::VkPrimitiveTopology
         vk.VK_FALSE #primitiveRestartEnable::VkBool32
-    )]
+    ))
 
     viewports = [vk.VkViewport(
         0.0, #x::Cfloat
@@ -480,7 +480,7 @@ function createGraphicsPipeline()
         swapChainExtent, #extent::VkExtent2D
     )]
 
-    viewportState = [vk.VkPipelineViewportStateCreateInfo(
+    viewportState = Ref(vk.VkPipelineViewportStateCreateInfo(
         vk.VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, #sType::VkStructureType
         C_NULL, #pNext::Ptr{Cvoid}
         0, #flags::VkPipelineViewportStateCreateFlags
@@ -488,9 +488,9 @@ function createGraphicsPipeline()
         pointer(viewports), #pViewports::Ptr{VkViewport}
         1, #scissorCount::UInt32
         pointer(scissors) #pScissors::Ptr{VkRect2D}
-    )]
+    ))
 
-    rasterizer = [vk.VkPipelineRasterizationStateCreateInfo(
+    rasterizer = Ref(vk.VkPipelineRasterizationStateCreateInfo(
         vk.VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO, #sType::VkStructureType
         C_NULL, #pNext::Ptr{Cvoid}
         0, #flags::VkPipelineRasterizationStateCreateFlags
@@ -504,9 +504,9 @@ function createGraphicsPipeline()
         0.0, #depthBiasClamp::Cfloat
         0.0, #depthBiasSlopeFactor::Cfloat
         1.0 #lineWidth::Cfloat
-    )]
+    ))
 
-    multisampling = [vk.VkPipelineMultisampleStateCreateInfo(
+    multisampling = Ref(vk.VkPipelineMultisampleStateCreateInfo(
         vk.VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO, #sType::VkStructureType
         C_NULL, #pNext::Ptr{Cvoid}
         0, #flags::VkPipelineMultisampleStateCreateFlags
@@ -516,9 +516,9 @@ function createGraphicsPipeline()
         C_NULL,#pSampleMask::Ptr{VkSampleMask}
         vk.VK_FALSE, #alphaToCoverageEnable::VkBool32
         vk.VK_FALSE #alphaToOneEnable::VkBool32
-    )]
+    ))
 
-    colorBlendAttachment = [vk.VkPipelineColorBlendAttachmentState(
+    colorBlendAttachments = [vk.VkPipelineColorBlendAttachmentState(
         vk.VK_FALSE, #blendEnable::VkBool32
         vk.VK_BLEND_FACTOR_ONE, #srcColorBlendFactor::VkBlendFactor
         vk.VK_BLEND_FACTOR_ZERO, #dstColorBlendFactor::VkBlendFactor
@@ -529,16 +529,16 @@ function createGraphicsPipeline()
         vk.VK_COLOR_COMPONENT_R_BIT | vk.VK_COLOR_COMPONENT_G_BIT | vk.VK_COLOR_COMPONENT_B_BIT | vk.VK_COLOR_COMPONENT_A_BIT #colorWriteMask::VkColorComponentFlags
     )]
 
-    colorBlending = [vk.VkPipelineColorBlendStateCreateInfo(
+    colorBlending = Ref(vk.VkPipelineColorBlendStateCreateInfo(
         vk.VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO, #sType::VkStructureType
         C_NULL, #pNext::Ptr{Cvoid}
         0, #flags::VkPipelineColorBlendStateCreateFlags
         vk.VK_FALSE, #logicOpEnable::VkBool32
         vk.VK_LOGIC_OP_COPY, #logicOp::VkLogicOp
         1, #attachmentCount::UInt32
-        pointer(colorBlendAttachment), #pAttachments::Ptr{VkPipelineColorBlendAttachmentState}
+        pointer(colorBlendAttachments), #pAttachments::Ptr{VkPipelineColorBlendAttachmentState}
         (0.0, 0.0, 0.0, 0.0), #blendConstants::NTuple{4, Cfloat}
-    )]
+    ))
 
     pipelineLayoutInfo = Ref(vk.VkPipelineLayoutCreateInfo(
         vk.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, #sType::VkStructureType
@@ -560,14 +560,14 @@ function createGraphicsPipeline()
         0, #flags::VkPipelineCreateFlags
         2, #stageCount::UInt32
         pointer(shaderStages), #pStages::Ptr{VkPipelineShaderStageCreateInfo}
-        pointer(vertexInputInfo), #pVertexInputState::Ptr{VkPipelineVertexInputStateCreateInfo}
-        pointer(inputAssembly), #pInputAssemblyState::Ptr{VkPipelineInputAssemblyStateCreateInfo}
+        pointer_from_objref(vertexInputInfo), #pVertexInputState::Ptr{VkPipelineVertexInputStateCreateInfo}
+        pointer_from_objref(inputAssembly), #pInputAssemblyState::Ptr{VkPipelineInputAssemblyStateCreateInfo}
         C_NULL, #pTessellationState::Ptr{VkPipelineTessellationStateCreateInfo}
-        pointer(viewportState), #pViewportState::Ptr{VkPipelineViewportStateCreateInfo}
-        pointer(rasterizer), #pRasterizationState::Ptr{VkPipelineRasterizationStateCreateInfo}
-        pointer(multisampling), #pMultisampleState::Ptr{VkPipelineMultisampleStateCreateInfo}
+        pointer_from_objref(viewportState), #pViewportState::Ptr{VkPipelineViewportStateCreateInfo}
+        pointer_from_objref(rasterizer), #pRasterizationState::Ptr{VkPipelineRasterizationStateCreateInfo}
+        pointer_from_objref(multisampling), #pMultisampleState::Ptr{VkPipelineMultisampleStateCreateInfo}
         C_NULL, #pDepthStencilState::Ptr{VkPipelineDepthStencilStateCreateInfo}
-        pointer(colorBlending), #pColorBlendState::Ptr{VkPipelineColorBlendStateCreateInfo}
+        pointer_from_objref(colorBlending), #pColorBlendState::Ptr{VkPipelineColorBlendStateCreateInfo}
         C_NULL, #pDynamicState::Ptr{VkPipelineDynamicStateCreateInfo}
         pipelineLayout[], #layout::VkPipelineLayout
         renderPass[], #renderPass::VkRenderPass
@@ -598,26 +598,26 @@ function createRenderPass()
         vk.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR #finalLayout::VkImageLayout
     )]
 
-    colorAttachmentRef = [vk.VkAttachmentReference(
+    colorAttachments = [vk.VkAttachmentReference(
         0, #attachment::UInt32
         vk.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL #layout::VkImageLayout
     )]
 
 
-    subpass = [vk.VkSubpassDescription(
+    subpasses = [vk.VkSubpassDescription(
         0, #flags::VkSubpassDescriptionFlags
         vk.VK_PIPELINE_BIND_POINT_GRAPHICS, #pipelineBindPoint::VkPipelineBindPoint
         0, #inputAttachmentCount::UInt32
         C_NULL, #pInputAttachments::Ptr{VkAttachmentReference}
         1, #colorAttachmentCount::UInt32
-        pointer(colorAttachmentRef), #pColorAttachments::Ptr{VkAttachmentReference}
+        pointer(colorAttachments), #pColorAttachments::Ptr{VkAttachmentReference}
         C_NULL, #pResolveAttachments::Ptr{VkAttachmentReference}
         C_NULL, #pDepthStencilAttachment::Ptr{VkAttachmentReference}
         0, #preserveAttachmentCount::UInt32
         C_NULL, #pPreserveAttachments::Ptr{UInt32}
     )]
 
-    dependency = [vk.VkSubpassDependency(
+    dependencices = [vk.VkSubpassDependency(
         vk.VK_SUBPASS_EXTERNAL, #srcSubpass::UInt32
         0, #dstSubpass::UInt32
         vk.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, #srcStageMask::VkPipelineStageFlags
@@ -634,9 +634,9 @@ function createRenderPass()
         1, #attachmentCount::UInt32
         pointer(colorAttachments), #pAttachments::Ptr{VkAttachmentDescription}
         1, #subpassCount::UInt32
-        pointer(subpass), #pSubpasses::Ptr{VkSubpassDescription}
+        pointer(subpasses), #pSubpasses::Ptr{VkSubpassDescription}
         1, #dependencyCount::UInt32
-        pointer(dependency) #pDependencies::Ptr{VkSubpassDependency}
+        pointer(dependencices) #pDependencies::Ptr{VkSubpassDependency}
     ))
 
     if (vk.vkCreateRenderPass(logicalDevice[], renderPassInfo, C_NULL, renderPass) != vk.VK_SUCCESS)
@@ -708,7 +708,7 @@ function createCommandBuffers()
             println("failed to begin recording command buffer!")
         end
         
-        clearColor = [vk.VkClearValue(vk.VkClearColorValue((0.0, 0.0, 0.0, 1.0)))]
+        clearColors = [vk.VkClearValue(vk.VkClearColorValue((0.0, 0.0, 0.0, 1.0)))]
         renderPassInfo = Ref(vk.VkRenderPassBeginInfo(
             vk.VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, #sType::VkStructureType
             C_NULL, #pNext::Ptr{Cvoid}
@@ -716,7 +716,7 @@ function createCommandBuffers()
             swapChainFramebuffers[i], #framebuffer::VkFramebuffer
             vk.VkRect2D(vk.VkOffset2D(0, 0), swapChainExtent), #renderArea::VkRect2D
             1, #clearValueCount::UInt32
-            pointer(clearColor) #pClearValues::Ptr{VkClearValue}
+            pointer(clearColors) #pClearValues::Ptr{VkClearValue}
         ))
 
         vk.vkCmdBeginRenderPass(commandBuffers[i], renderPassInfo, vk.VK_SUBPASS_CONTENTS_INLINE)
@@ -738,14 +738,14 @@ function drawFrame()
     imageIndex = Ref{UInt32}()
     vk.vkAcquireNextImageKHR(logicalDevice[], swapChain[], typemax(UInt64), imageAvailableSemaphores[currentFrame], vk.VK_NULL_HANDLE, imageIndex)
     waitSemaphores = [imageAvailableSemaphores[currentFrame]]
-    waitDstStageMask = [vk.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT]
+    waitDstStageMask = Ref(vk.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT)
     signalSemaphores = [renderFinishedSemaphores[currentFrame]]
     submitInfo = Ref(vk.VkSubmitInfo(
         vk.VK_STRUCTURE_TYPE_SUBMIT_INFO, #sType::VkStructureType
         C_NULL, #pNext::Ptr{Cvoid}
         1, #waitSemaphoreCount::UInt32
         pointer(waitSemaphores), #pWaitSemaphores::Ptr{VkSemaphore}
-        pointer(waitDstStageMask), #pWaitDstStageMask::Ptr{VkPipelineStageFlags}
+        pointer_from_objref(waitDstStageMask), #pWaitDstStageMask::Ptr{VkPipelineStageFlags}
         1, #commandBufferCount::UInt32
         pointer_from_objref(Ref(commandBuffers[imageIndex[] + 1])), #pCommandBuffers::Ptr{VkCommandBuffer}
         1, #signalSemaphoreCount::UInt32

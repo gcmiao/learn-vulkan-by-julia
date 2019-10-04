@@ -124,7 +124,7 @@ end
 function pickPhysicalDevice()
     deviceCount = Ref{Cuint}(0)
     vk.vkEnumeratePhysicalDevices(instance[], deviceCount, C_NULL)
-    if (deviceCount == 0)
+    if (deviceCount[] == 0)
         println("failed to find GPUs with Vulkan support!")
     end
 
@@ -226,11 +226,12 @@ function createLogicalDevice()
         Base.unsafe_convert(Ptr{vk.VkPhysicalDeviceFeatures}, deviceFeatures)
     ))
     println("ready")
-    
-    err = vk.vkCreateDevice(physicalDevice, createInfo, C_NULL, logicalDevice)
-    if err != vk.VK_SUCCESS
-        println(err)
-        println("failed to create logical device!")
+    GC.@preserve createInfo begin
+        err = vk.vkCreateDevice(physicalDevice, createInfo, C_NULL, logicalDevice)
+        if err != vk.VK_SUCCESS
+            println(err)
+            println("failed to create logical device!")
+        end
     end
 
     vk.vkGetDeviceQueue(logicalDevice[], indices.graphicsFamily, 0, graphicsQueue)
@@ -258,7 +259,7 @@ function querySwapChainSupport(device::vk.VkPhysicalDevice)
     vk.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, details.capabilities)
     formatCount = Ref{UInt32}()
     vk.vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, formatCount, C_NULL)
-    if (formatCount != 0)
+    if (formatCount[] != 0)
         resize!(details.formats, formatCount[])
         vk.vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, formatCount, details.formats)
     end
@@ -576,7 +577,7 @@ function createGraphicsPipeline()
         -1 #basePipelineIndex::Int32
     ))
 
-    if (vk.vkCreateGraphicsPipelines(logicalDevice[], vk.VK_NULL_HANDLE, 1, pipelineInfo, C_NULL, graphicsPipeline) != vk.VK_SUCCESS)
+    if (vk.vkCreateGraphicsPipelines(logicalDevice[], C_NULL, 1, pipelineInfo, C_NULL, graphicsPipeline) != vk.VK_SUCCESS)
         println("failed to create graphics pipeline!")
     end
 
@@ -598,7 +599,7 @@ function createRenderPass()
         vk.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR #finalLayout::VkImageLayout
     )]
 
-    colorAttachments = [vk.VkAttachmentReference(
+    colorAttachmentRefs = [vk.VkAttachmentReference(
         0, #attachment::UInt32
         vk.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL #layout::VkImageLayout
     )]
@@ -610,7 +611,7 @@ function createRenderPass()
         0, #inputAttachmentCount::UInt32
         C_NULL, #pInputAttachments::Ptr{VkAttachmentReference}
         1, #colorAttachmentCount::UInt32
-        pointer(colorAttachments), #pColorAttachments::Ptr{VkAttachmentReference}
+        pointer(colorAttachmentRefs), #pColorAttachments::Ptr{VkAttachmentReference}
         C_NULL, #pResolveAttachments::Ptr{VkAttachmentReference}
         C_NULL, #pDepthStencilAttachment::Ptr{VkAttachmentReference}
         0, #preserveAttachmentCount::UInt32
@@ -736,7 +737,7 @@ function drawFrame()
     vk.vkResetFences(logicalDevice[], 1, pFence)
 
     imageIndex = Ref{UInt32}()
-    vk.vkAcquireNextImageKHR(logicalDevice[], swapChain[], typemax(UInt64), imageAvailableSemaphores[currentFrame], vk.VK_NULL_HANDLE, imageIndex)
+    vk.vkAcquireNextImageKHR(logicalDevice[], swapChain[], typemax(UInt64), imageAvailableSemaphores[currentFrame], C_NULL, imageIndex)
     waitSemaphores = [imageAvailableSemaphores[currentFrame]]
     waitDstStageMask = Ref(vk.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT)
     signalSemaphores = [renderFinishedSemaphores[currentFrame]]
